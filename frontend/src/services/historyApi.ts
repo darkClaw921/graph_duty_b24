@@ -12,7 +12,7 @@ export const historyApi = {
     if (filters.skip !== undefined) params.skip = filters.skip;
     if (filters.limit !== undefined) params.limit = filters.limit;
     
-    const response = await api.get<UpdateHistory[]>('/api/history', { params });
+    const response = await api.get<UpdateHistory[]>('/history', { params });
     return response.data;
   },
 
@@ -24,7 +24,7 @@ export const historyApi = {
     if (filters.start_date) params.start_date = filters.start_date;
     if (filters.end_date) params.end_date = filters.end_date;
     
-    const response = await api.get<UpdateHistoryCount>('/api/history/count', { params });
+    const response = await api.get<UpdateHistoryCount>('/history/count', { params });
     return response.data;
   },
 };

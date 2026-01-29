@@ -59,12 +59,12 @@ export const utilsApi = {
     const params: Record<string, string> = {};
     if (updateDate) params.update_date = updateDate;
     
-    const response = await api.get<UpdateCountResponse>('/api/utils/update-count', { params });
+    const response = await api.get<UpdateCountResponse>('/utils/update-count', { params });
     return response.data;
   },
 
   updateNow: async (): Promise<{ date: string; updated_entities: number; errors: string[] }> => {
-    const response = await api.post('/api/utils/update-now');
+    const response = await api.post('/utils/update-now');
     return response.data;
   },
 
@@ -72,8 +72,8 @@ export const utilsApi = {
     onProgress: (progress: UpdateProgress) => void,
     updateDate?: string
   ): Promise<void> => {
-    const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-    const url = `${API_URL}/api/utils/update-now-stream${updateDate ? `?update_date=${updateDate}` : ''}`;
+    const API_URL = import.meta.env.VITE_API_URL || '/api';
+    const url = `${API_URL}/utils/update-now-stream${updateDate ? `?update_date=${updateDate}` : ''}`;
     
     console.log('Отправка запроса на:', url);
     
@@ -173,7 +173,7 @@ export const utilsApi = {
     const params: Record<string, string> = {};
     if (updateDate) params.update_date = updateDate;
     
-    const response = await api.get<PreviewUpdatesResponse>('/api/utils/preview-updates', { params });
+    const response = await api.get<PreviewUpdatesResponse>('/utils/preview-updates', { params });
     return response.data;
   },
 };
