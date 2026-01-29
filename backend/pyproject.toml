@@ -1,0 +1,22 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "alembic==1.12.1",
+    "apscheduler==3.10.4",
+    "fast-bitrix24>=1.8.11",
+    "fastapi==0.104.1",
+    "pydantic",
+    "pydantic-settings",
+    "pydantic-core==2.41.5",
+    "python-dateutil==2.8.2",
+    "python-dotenv",
+    "python-multipart",
+    "sqlalchemy==2.0.46",
+    "uvicorn[standard]==0.24.0",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+]
