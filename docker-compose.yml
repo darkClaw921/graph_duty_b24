@@ -10,8 +10,8 @@ services:
       - ./backend/data:/app/data
       - ./backend:/app
     environment:
-      - BITRIX24_WEBHOOK=${BITRIX24_WEBHOOK}
-      - BITRIX24_ACCESS_TOKEN=${BITRIX24_ACCESS_TOKEN}
+      - BITRIX24_WEBHOOK=${BITRIX24_WEBHOOK:-}
+      - BITRIX24_ACCESS_TOKEN=${BITRIX24_ACCESS_TOKEN:-}
       - APP_NAME=${APP_NAME:-Graph Duty B24}
       - DEBUG=${DEBUG:-False}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -21,8 +21,6 @@ services:
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173,http://localhost:80,http://localhost}
       - BACKEND_PORT=${BACKEND_PORT:-8000}
       - FRONTEND_PORT=${FRONTEND_PORT:-3000}
-    env_file:
-      - ./backend/.env
     restart: unless-stopped
     networks:
       - graph_duty_network
