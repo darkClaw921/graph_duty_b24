@@ -13,9 +13,17 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 @router.post("/login", response_model=LoginResponse)
 async def login(login_data: LoginRequest):
     """Авторизация пользователя"""
+    # Нормализуем данные (убираем пробелы)
+    username = login_data.username.strip() if login_data.username else ""
+    password = login_data.password.strip() if login_data.password else ""
+    admin_username = settings.admin_username.strip() if settings.admin_username else ""
+    admin_password = settings.admin_password.strip() if settings.admin_password else ""
+    
+    #logger.debug(f"Попытка входа: username='{username}', admin_username='{admin_username}'")
+    
     # Проверяем логин и пароль с данными из .env
-    if login_data.username != settings.admin_username or login_data.password != settings.admin_password:
-        logger.warning(f"Неудачная попытка входа: {login_data.username}")
+    if username != admin_username or password != admin_password:
+        logger.warning(f"Неудачная попытка входа: {username}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Неверный логин или пароль",

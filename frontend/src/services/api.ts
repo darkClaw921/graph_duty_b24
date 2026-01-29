@@ -33,7 +33,9 @@ api.interceptors.response.use(
   (error) => {
     if (error.response) {
       // Если получили 401, перенаправляем на страницу логина
-      if (error.response.status === 401) {
+      // Но не для endpoint логина, чтобы не создавать бесконечный цикл
+      const isLoginEndpoint = error.config?.url?.includes('/auth/login');
+      if (error.response.status === 401 && !isLoginEndpoint) {
         localStorage.removeItem(TOKEN_KEY);
         // Редирект на страницу логина только если мы не на ней
         if (window.location.pathname !== '/login') {

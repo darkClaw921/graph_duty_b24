@@ -19,6 +19,9 @@ services:
       - SCHEDULER_ENABLED=${SCHEDULER_ENABLED:-True}
       - DEFAULT_UPDATE_TIME=${DEFAULT_UPDATE_TIME:-09:00}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173,http://localhost:80,http://localhost}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin}
+      - SECRET_KEY=${SECRET_KEY:-}
     restart: unless-stopped
     networks:
       - graph_duty_network
