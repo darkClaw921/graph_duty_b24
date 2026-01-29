@@ -75,13 +75,24 @@ export const utilsApi = {
     const API_URL = import.meta.env.VITE_API_URL || '/api';
     const url = `${API_URL}/utils/update-now-stream${updateDate ? `?update_date=${updateDate}` : ''}`;
     
+    // Получаем токен из localStorage для авторизации
+    const TOKEN_KEY = 'auth_token';
+    const token = localStorage.getItem(TOKEN_KEY);
+    
+    const headers: HeadersInit = {
+      'Accept': 'text/event-stream',
+    };
+    
+    // Добавляем токен авторизации, если он есть
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
     console.log('Отправка запроса на:', url);
     
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Accept': 'text/event-stream',
-      },
+      headers,
     });
     
     console.log('Получен ответ:', response.status, response.statusText);
