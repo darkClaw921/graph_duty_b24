@@ -1,6 +1,7 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from datetime import datetime, date, time
+from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models import UpdateRule
@@ -11,7 +12,10 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
-scheduler = BackgroundScheduler()
+# Московский часовой пояс (MSK, UTC+3)
+MSK_TIMEZONE = ZoneInfo("Europe/Moscow")
+
+scheduler = BackgroundScheduler(timezone=MSK_TIMEZONE)
 
 
 def daily_update_task():
@@ -20,8 +24,9 @@ def daily_update_task():
     try:
         logger.info("Запуск ежедневного обновления ответственных")
         update_service = UpdateService(db)
-        today = date.today()
-        now = datetime.now()
+        # Используем московское время для определения даты и времени
+        now_msk = datetime.now(MSK_TIMEZONE)
+        today = now_msk.date()
         
         # Получаем все включенные правила
         rules = db.query(UpdateRule).filter(
@@ -33,8 +38,8 @@ def daily_update_task():
             skipped_count = 0
             
             for rule in rules:
-                # Проверяем, нужно ли обновлять для этого правила
-                if update_service.should_update_rule(rule, now):
+                # Проверяем, нужно ли обновлять для этого правила (используем московское время)
+                if update_service.should_update_rule(rule, now_msk):
                     try:
                         result = await update_service.update_entities_for_date(today)
                         updated_count += result.get('updated_entities', 0)
@@ -82,7 +87,7 @@ def start_scheduler():
     )
     
     scheduler.start()
-    logger.info(f"Планировщик запущен. Ежедневное обновление в {settings.default_update_time}")
+    logger.info(f"Планировщик запущен. Ежедневное обновление в {settings.default_update_time} MSK (Московское время)")
 
 
 def stop_scheduler():

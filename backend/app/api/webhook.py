@@ -5,6 +5,7 @@ from typing import Dict, Any
 from app.database import get_db
 from app.services.schedule_service import ScheduleService
 from app.services.bitrix_client import get_bitrix_client
+from app.services.update_service import get_today_msk
 from app.models import UpdateRule, User, UpdateHistory, UpdateSource
 import logging
 
@@ -57,8 +58,8 @@ async def handle_bitrix_webhook(
             logger.error(f"Не удалось извлечь ID сделки из строки: {deal_id_str}")
             return {"status": "error", "reason": "Invalid deal ID format"}
         
-        # Получаем текущую дату
-        today = date.today()
+        # Получаем текущую дату в московском времени
+        today = get_today_msk()
         
         # Получаем пользователей на дежурстве на сегодня
         schedule_service = ScheduleService(db)

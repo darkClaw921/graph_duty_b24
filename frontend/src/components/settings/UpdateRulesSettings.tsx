@@ -6,9 +6,35 @@ import { UpdateRule, UpdateRuleCreate } from '../../types/rule';
 import { EntityField } from '../../types/entity';
 import { Button } from '../common/Button';
 import { Modal } from '../common/Modal';
-import { Input } from '../common/Input';
 
 const STORAGE_KEY = 'updateRulesSettings_formState';
+
+// Компонент для подсказки с иконкой вопроса
+const HelpTooltip: React.FC<{ content: React.ReactNode }> = ({ content }) => {
+  return (
+    <div className="relative group">
+      <svg
+        className="w-4 h-4 text-gray-400 cursor-help"
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+        />
+      </svg>
+      <div className="absolute left-0 bottom-full mb-2 w-80 p-3 bg-gray-900 text-white text-xs rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+        <div className="space-y-2">
+          {content}
+        </div>
+        <div className="absolute top-full left-4 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+      </div>
+    </div>
+  );
+};
 
 const UpdateRulesSettings: React.FC = () => {
   const [rules, setRules] = useState<UpdateRule[]>([]);
@@ -68,6 +94,16 @@ const UpdateRulesSettings: React.FC = () => {
     { value: 6, label: 'Суббота' },
     { value: 7, label: 'Воскресенье' },
   ];
+
+  const ruleTypeLabels: Record<string, string> = {
+    'assigned_by_condition': 'По текущему ответственному',
+    'field_condition': 'По полю',
+    'combined': 'Комбинированное',
+  };
+
+  const getRuleTypeLabel = (ruleType: string): string => {
+    return ruleTypeLabels[ruleType] || ruleType;
+  };
 
   const fetchEntityFields = async (entityType: string) => {
     if (!entityType) {
@@ -512,6 +548,28 @@ const UpdateRulesSettings: React.FC = () => {
     return Math.max(1, Math.min(100, maxAvailable));
   };
 
+  const handleDistributeEvenly = () => {
+    const selectedUserIds = formData.user_ids || [];
+    if (selectedUserIds.length === 0) {
+      return;
+    }
+    
+    // Вычисляем равномерное распределение
+    const basePercentage = Math.floor(100 / selectedUserIds.length);
+    const remainder = 100 % selectedUserIds.length;
+    
+    // Распределяем проценты равномерно, остаток добавляем к первым пользователям
+    const newDistributions = selectedUserIds.map((userId, index) => {
+      const percentage = basePercentage + (index < remainder ? 1 : 0);
+      return { user_id: userId, distribution_percentage: percentage };
+    });
+    
+    setFormData({
+      ...formData,
+      user_distributions: newDistributions,
+    });
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
@@ -552,7 +610,7 @@ const UpdateRulesSettings: React.FC = () => {
                     </span>
                   </div>
                   <div className="text-sm text-gray-600 space-y-1">
-                    <p>Время обновления: {rule.update_time}</p>
+                    <p>Время обновления: {rule.update_time} (MSK)</p>
                     <p>
                       Дни недели:{' '}
                       {rule.update_days && rule.update_days.length > 0
@@ -562,7 +620,7 @@ const UpdateRulesSettings: React.FC = () => {
                             .join(', ')
                         : 'Ежедневно'}
                     </p>
-                    <p>Тип правила: {rule.rule_type}</p>
+                    <p>Тип правила: {getRuleTypeLabel(rule.rule_type)}</p>
                     <p>
                       Пользователи и распределение:{' '}
                       {rule.user_distributions && rule.user_distributions.length > 0
@@ -611,9 +669,25 @@ const UpdateRulesSettings: React.FC = () => {
       >
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Тип сущности
-            </label>
+            <div className="flex items-center gap-2 mb-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Тип сущности
+              </label>
+              <HelpTooltip
+                content={
+                  <div className="space-y-2">
+                    <p className="font-semibold mb-2">Тип сущности:</p>
+                    <p>
+                      Выберите тип сущности Bitrix24, к которой будет применяться правило обновления ответственного. 
+                      Доступны: Сделки, Контакты, Компании, Лиды.
+                    </p>
+                    <p className="mt-2 text-gray-300">
+                      После создания правила тип сущности нельзя изменить.
+                    </p>
+                  </div>
+                }
+              />
+            </div>
             <select
               value={formData.entity_type}
               onChange={(e) => {
@@ -637,17 +711,66 @@ const UpdateRulesSettings: React.FC = () => {
             </select>
           </div>
 
-          <Input
-            label="Время обновления"
-            type="time"
-            value={formData.update_time}
-            onChange={(e) => setFormData({ ...formData, update_time: e.target.value })}
-          />
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Время обновления
+              </label>
+              <HelpTooltip
+                content={
+                  <div className="space-y-2">
+                    <p className="font-semibold mb-2">Время обновления:</p>
+                    <p>
+                      Укажите время суток, когда должно происходить автоматическое обновление ответственного 
+                      для сущностей, соответствующих условиям правила.
+                    </p>
+                    <p className="mt-2 font-semibold">
+                      ⏰ Время указывается в московском часовом поясе (MSK, UTC+3).
+                    </p>
+                    <p className="mt-2">
+                      Обновление выполняется по расписанию согласно настройкам системы.
+                    </p>
+                  </div>
+                }
+              />
+            </div>
+            <div className="relative">
+              <input
+                type="time"
+                value={formData.update_time}
+                onChange={(e) => setFormData({ ...formData, update_time: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-500 pointer-events-none">
+                MSK
+              </span>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Время указывается в московском часовом поясе (MSK, UTC+3)
+            </p>
+          </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Дни недели (оставьте пустым для ежедневного обновления)
-            </label>
+            <div className="flex items-center gap-2 mb-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Дни недели
+              </label>
+              <HelpTooltip
+                content={
+                  <div className="space-y-2">
+                    <p className="font-semibold mb-2">Дни недели:</p>
+                    <p>
+                      Выберите дни недели, когда должно выполняться обновление ответственного. 
+                      Если не выбрано ни одного дня, правило будет применяться ежедневно.
+                    </p>
+                    <p className="mt-2">
+                      Например, можно настроить обновление только в рабочие дни (понедельник-пятница).
+                    </p>
+                  </div>
+                }
+              />
+            </div>
+            <p className="text-xs text-gray-500 mb-2">Оставьте пустым для ежедневного обновления</p>
             <div className="flex flex-wrap gap-2">
               {weekDays.map((day) => (
                 <button
@@ -677,9 +800,41 @@ const UpdateRulesSettings: React.FC = () => {
 
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">
-                Пользователи и процент распределения
-              </label>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Пользователи и процент распределения
+                  </label>
+                  <HelpTooltip
+                    content={
+                      <div className="space-y-2">
+                        <p className="font-semibold mb-2">Как работает процент распределения:</p>
+                        <p>
+                          Проценты определяют вероятность назначения ответственного из списка пользователей правила. 
+                          Например, если у пользователя А - 60%, а у пользователя Б - 40%, то в 60% случаев будет назначен А, в 40% - Б.
+                        </p>
+                        <p className="font-semibold mt-3 mb-2">Если в правиле больше пользователей, чем в смене:</p>
+                        <p>
+                          Система использует только тех пользователей из правила, которые есть в текущей смене дежурства. 
+                          Проценты пересчитываются пропорционально между доступными пользователями. 
+                          Например, если в правиле 10 пользователей (по 10% каждый), а в смене только 2 из них, 
+                          то эти 2 пользователя получат по 50% каждый.
+                        </p>
+                      </div>
+                    }
+                  />
+                </div>
+                {(formData.user_ids && formData.user_ids.length > 0) && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleDistributeEvenly}
+                    title="Равномерно распределить проценты между выбранными пользователями"
+                  >
+                    Распределить равномерно
+                  </Button>
+                )}
+              </div>
               <span className={`text-xs font-medium ${
                 getTotalDistributionPercentage() > 100 
                   ? 'text-red-600' 
@@ -762,16 +917,52 @@ const UpdateRulesSettings: React.FC = () => {
                 onChange={(e) => setFormData({ ...formData, update_related_contacts_companies: e.target.checked })}
                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
               />
-              <label htmlFor="update_related_contacts_companies" className="text-sm font-medium text-gray-700 cursor-pointer">
-                Обновлять также связанные контакты и компании привязанные к сделке
-              </label>
+              <div className="flex items-center gap-2 flex-1">
+                <label htmlFor="update_related_contacts_companies" className="text-sm font-medium text-gray-700 cursor-pointer">
+                  Обновлять также связанные контакты и компании привязанные к сделке
+                </label>
+                <HelpTooltip
+                  content={
+                    <div className="space-y-2">
+                      <p className="font-semibold mb-2">Обновление связанных сущностей:</p>
+                      <p>
+                        При включении этой опции, при обновлении ответственного на сделке, 
+                        также будет обновляться ответственный на связанных с этой сделкой контактах и компаниях.
+                      </p>
+                      <p className="mt-2">
+                        Это позволяет синхронизировать ответственных между связанными сущностями автоматически.
+                      </p>
+                    </div>
+                  }
+                />
+              </div>
             </div>
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Тип правила
-            </label>
+            <div className="flex items-center gap-2 mb-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Тип правила
+              </label>
+              <HelpTooltip
+                content={
+                  <div className="space-y-2">
+                    <p className="font-semibold mb-2">Типы правил:</p>
+                    <div className="space-y-2">
+                      <p>
+                        <span className="font-semibold">По текущему ответственному</span> - правило применяется к сущностям, где текущий ответственный соответствует условиям распределения пользователей в правиле. (В разработке)
+                      </p>
+                      <p>
+                        <span className="font-semibold">По полю</span> - правило применяется к сущностям, у которых выбранное поле имеет указанное значение (например, воронка, стадия, статус).
+                      </p>
+                      <p>
+                        <span className="font-semibold">Комбинированное</span> - правило применяется при выполнении нескольких условий одновременно (например, по текущему ответственному И по полю). (В разработке)
+                      </p>
+                    </div>
+                  </div>
+                }
+              />
+            </div>
             <select
               value={formData.rule_type}
               onChange={(e) => {
@@ -798,9 +989,25 @@ const UpdateRulesSettings: React.FC = () => {
           {formData.rule_type === 'field_condition' && (
             <>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Поле сущности
-                </label>
+                <div className="flex items-center gap-2 mb-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Поле сущности
+                  </label>
+                  <HelpTooltip
+                    content={
+                      <div className="space-y-2">
+                        <p className="font-semibold mb-2">Поле сущности:</p>
+                        <p>
+                          Выберите поле сущности, по значению которого будет определяться применение правила. 
+                          Доступны поля типа воронка (crm_category), статус (crm_status) и другие.
+                        </p>
+                        <p className="mt-2">
+                          После выбора поля станут доступны дополнительные настройки для выбора конкретных значений.
+                        </p>
+                      </div>
+                    }
+                  />
+                </div>
                 {loadingFields ? (
                   <p className="text-sm text-gray-500">Загрузка полей...</p>
                 ) : entityFields ? (
@@ -840,9 +1047,26 @@ const UpdateRulesSettings: React.FC = () => {
               {/* Выбор категорий (воронок) для полей типа crm_category - множественный выбор */}
               {selectedFieldData?.type === 'crm_category' && (formData.condition_config as any)?.field_id && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Воронки (можно выбрать несколько)
-                  </label>
+                  <div className="flex items-center gap-2 mb-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Воронки
+                    </label>
+                    <HelpTooltip
+                      content={
+                        <div className="space-y-2">
+                          <p className="font-semibold mb-2">Воронки:</p>
+                          <p>
+                            Выберите одну или несколько воронок продаж, к сделкам которых будет применяться правило. 
+                            Можно выбрать несколько воронок одновременно.
+                          </p>
+                          <p className="mt-2">
+                            После выбора воронок станут доступны стадии сделок для более точной настройки правила.
+                          </p>
+                        </div>
+                      }
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mb-2">Можно выбрать несколько</p>
                   {loadingFieldValues ? (
                     <p className="text-sm text-gray-500">Загрузка воронок...</p>
                   ) : fieldValues.length > 0 ? (
@@ -928,9 +1152,27 @@ const UpdateRulesSettings: React.FC = () => {
               {/* Выбор стадий для категорий (множественный выбор) */}
               {selectedFieldData?.type === 'crm_category' && (formData.condition_config as any)?.category_ids && Array.isArray((formData.condition_config as any)?.category_ids) && (formData.condition_config as any)?.category_ids.length > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Стадии сделки (необязательно - если не выбраны, правило применяется ко всем выбранным воронкам)
-                  </label>
+                  <div className="flex items-center gap-2 mb-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Стадии сделки
+                    </label>
+                    <HelpTooltip
+                      content={
+                        <div className="space-y-2">
+                          <p className="font-semibold mb-2">Стадии сделки:</p>
+                          <p>
+                            Выберите конкретные стадии сделок, к которым будет применяться правило. 
+                            Можно выбрать несколько стадий одновременно.
+                          </p>
+                          <p className="mt-2">
+                            Если стадии не выбраны, правило будет применяться ко всем стадиям выбранных воронок. 
+                            Это позволяет настроить правило как для конкретных стадий, так и для всех стадий воронки.
+                          </p>
+                        </div>
+                      }
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500 mb-2">Необязательно - если не выбраны, правило применяется ко всем выбранным воронкам</p>
                   {loadingCategoryStages ? (
                     <p className="text-sm text-gray-500">Загрузка стадий...</p>
                   ) : categoryStages.length > 0 ? (
@@ -999,9 +1241,25 @@ const UpdateRulesSettings: React.FC = () => {
               {/* Выбор значения для полей типа crm_status */}
               {selectedFieldData?.type === 'crm_status' && (formData.condition_config as any)?.field_id && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Значение статуса
-                  </label>
+                  <div className="flex items-center gap-2 mb-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Значение статуса
+                    </label>
+                    <HelpTooltip
+                      content={
+                        <div className="space-y-2">
+                          <p className="font-semibold mb-2">Значение статуса:</p>
+                          <p>
+                            Выберите конкретное значение статуса, при котором будет применяться правило. 
+                            Правило будет применяться только к сущностям с выбранным статусом.
+                          </p>
+                          <p className="mt-2">
+                            Это позволяет настроить разные правила для разных статусов сущностей.
+                          </p>
+                        </div>
+                      }
+                    />
+                  </div>
                   {loadingFieldValues ? (
                     <p className="text-sm text-gray-500">Загрузка статусов...</p>
                   ) : fieldValues.length > 0 ? (
@@ -1034,7 +1292,7 @@ const UpdateRulesSettings: React.FC = () => {
             </>
           )}
 
-          <div className="flex items-center">
+          <div className="flex items-center gap-2">
             <input
               type="checkbox"
               id="rule-enabled"
@@ -1042,9 +1300,24 @@ const UpdateRulesSettings: React.FC = () => {
               onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
               className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
             />
-            <label htmlFor="rule-enabled" className="ml-2 block text-sm text-gray-900">
-              Включено
-            </label>
+            <div className="flex items-center gap-2 flex-1">
+              <label htmlFor="rule-enabled" className="block text-sm text-gray-900 cursor-pointer">
+                Включено
+              </label>
+              <HelpTooltip
+                content={
+                  <div className="space-y-2">
+                    <p className="font-semibold mb-2">Включено:</p>
+                    <p>
+                      Определяет, активно ли правило. Только включенные правила применяются при обновлении ответственных.
+                    </p>
+                    <p className="mt-2">
+                      Отключенные правила сохраняются, но не выполняются. Это позволяет временно отключить правило без его удаления.
+                    </p>
+                  </div>
+                }
+              />
+            </div>
           </div>
 
           <div className="flex gap-2 justify-end">

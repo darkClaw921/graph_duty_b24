@@ -1,13 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from typing import Optional
 from app.database import get_db
-from app.services.update_service import UpdateService
+from app.services.update_service import UpdateService, get_today_msk
 from app.auth.dependencies import get_current_user
 import json
 import logging
+
+# Московский часовой пояс (MSK, UTC+3)
+MSK_TIMEZONE = ZoneInfo("Europe/Moscow")
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +44,7 @@ async def get_update_count(
         if update_date:
             target_date = date.fromisoformat(update_date)
         else:
-            target_date = date.today()
+            target_date = get_today_msk()
         
         result = await service.get_entities_count_for_date(target_date)
         return result
@@ -61,7 +65,7 @@ async def update_entities_now_stream(
         if update_date:
             target_date = date.fromisoformat(update_date)
         else:
-            target_date = date.today()
+            target_date = get_today_msk()
         
         logger.info(f"Целевая дата: {target_date}")
         
@@ -112,7 +116,7 @@ async def get_preview_updates(
         if update_date:
             target_date = date.fromisoformat(update_date)
         else:
-            target_date = date.today()
+            target_date = get_today_msk()
         
         result = await service.get_preview_updates(target_date)
         return result

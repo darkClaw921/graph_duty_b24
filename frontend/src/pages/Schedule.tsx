@@ -5,19 +5,16 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, parseIS
 import ru from 'date-fns/locale/ru';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
-import { Input } from '../components/common/Input';
 import { PreviewUpdatesModal } from '../components/common/PreviewUpdatesModal';
 import { utilsApi, UpdateProgress, PreviewEntity } from '../services/utilsApi';
 
 const Schedule: React.FC = () => {
-  const { schedules, fetchSchedules, createSchedule, updateSchedule, deleteSchedule, generateSchedule, loading } = useScheduleStore();
+  const { schedules, fetchSchedules, createSchedule, updateSchedule, deleteSchedule, loading } = useScheduleStore();
   const { users, fetchUsers } = useUsersStore();
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<number | ''>('');
-  const [generateYear, setGenerateYear] = useState(new Date().getFullYear());
-  const [generateMonth, setGenerateMonth] = useState(new Date().getMonth() + 1);
   const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null);
   const [updateProgress, setUpdateProgress] = useState<{
     isUpdating: boolean;
@@ -171,20 +168,6 @@ const Schedule: React.FC = () => {
     }
   };
 
-  const handleGenerate = async () => {
-    if (confirm(`Сгенерировать график на ${generateMonth}/${generateYear}? Существующие записи будут перезаписаны.`)) {
-      await generateSchedule(generateYear, generateMonth);
-      setLastUpdateTime(new Date());
-    }
-  };
-
-  const handleRefresh = async () => {
-    const start = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
-    const end = format(endOfMonth(currentMonth), 'yyyy-MM-dd');
-    await fetchSchedules(start, end);
-    await fetchUsers();
-    setLastUpdateTime(new Date());
-  };
 
   const handlePreviewUpdates = async () => {
     try {
@@ -323,7 +306,7 @@ const Schedule: React.FC = () => {
                 totalCount: 0,
                 currentCount: 0,
                 status: 'completed',
-                currentRule: 'Нет сущностей для обновления'
+                currentRule: 'Нет ответственных для обновления'
               });
               setTimeout(() => {
                 setUpdateProgress(null);
@@ -375,14 +358,14 @@ const Schedule: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Прогресс бар обновления сущностей */}
+      {/* Прогресс бар обновления ответственных */}
       {updateProgress && updateProgress.isUpdating && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
               <span className="text-sm font-medium text-blue-900">
-                Обновление сущностей...
+                Обновление ответственных по графику...
               </span>
               {updateProgress.currentRule && (
                 <span className="text-sm text-blue-700">
@@ -424,8 +407,8 @@ const Schedule: React.FC = () => {
                 : 'text-green-900'
             }`}>
               {updateProgress.currentCount === 0 
-                ? 'Обновление завершено: нет сущностей для обновления на сегодня'
-                : `Обновление завершено: обновлено ${updateProgress.currentCount} сущностей`}
+                ? 'Обновление завершено: нет ответственных для обновления на сегодня'
+                : `Обновление завершено: обновлено ${updateProgress.currentCount} ответственных`}
             </span>
           </div>
         </div>
@@ -435,7 +418,7 @@ const Schedule: React.FC = () => {
         <div className="bg-red-50 border border-red-200 rounded-lg p-4">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-red-900">
-              Ошибка при обновлении сущностей
+              Ошибка при обновлении ответственных
             </span>
           </div>
         </div>
@@ -445,31 +428,10 @@ const Schedule: React.FC = () => {
         <h2 className="text-3xl font-bold text-gray-900">График дежурств</h2>
         <div className="flex gap-4">
           <Button 
-            onClick={handleRefresh} 
-            isLoading={loading}
-            variant="secondary"
-            title="Обновить данные графика"
-          >
-            <svg 
-              className="w-5 h-5 inline-block mr-2" 
-              fill="none" 
-              stroke="currentColor" 
-              viewBox="0 0 24 24"
-            >
-              <path 
-                strokeLinecap="round" 
-                strokeLinejoin="round" 
-                strokeWidth={2} 
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
-              />
-            </svg>
-            Обновить график
-          </Button>
-          <Button 
             onClick={handlePreviewUpdates} 
             isLoading={loadingPreview}
             variant="secondary"
-            title="Посмотреть какие сущности будут обновлены без реального обновления"
+            title="Посмотреть какие ответственные будут обновлены без реального обновления"
             disabled={loadingPreview || updateProgress?.isUpdating}
           >
             <svg 
@@ -497,7 +459,7 @@ const Schedule: React.FC = () => {
             onClick={handleForceUpdate} 
             isLoading={updateProgress?.isUpdating}
             variant="primary"
-            title="Принудительно обновить сущности Bitrix24"
+            title="Обновить ответственных по графику в Bitrix24"
             disabled={updateProgress?.isUpdating}
           >
             <svg 
@@ -513,27 +475,8 @@ const Schedule: React.FC = () => {
                 d="M13 10V3L4 14h7v7l9-11h-7z" 
               />
             </svg>
-            Обновить сущности
+            Обновить ответственных по графику
           </Button>
-          <div className="flex gap-2">
-            <Input
-              type="number"
-              value={generateYear}
-              onChange={(e) => setGenerateYear(Number(e.target.value))}
-              className="w-24"
-            />
-            <Input
-              type="number"
-              value={generateMonth}
-              onChange={(e) => setGenerateMonth(Number(e.target.value))}
-              min={1}
-              max={12}
-              className="w-20"
-            />
-            <Button onClick={handleGenerate} isLoading={loading}>
-              Сгенерировать график
-            </Button>
-          </div>
         </div>
       </div>
 

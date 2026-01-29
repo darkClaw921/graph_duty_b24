@@ -35,10 +35,17 @@ const Dashboard: React.FC = () => {
     return names.join(', ') || 'Не назначен';
   };
 
+  // Получаем заголовок карточки в зависимости от количества дежурных
+  const getDutyCardTitle = () => {
+    if (!todaySchedule || todaySchedule.users.length === 0) {
+      return 'Дежурный сегодня';
+    }
+    return todaySchedule.users.length > 1 ? 'Дежурные сегодня' : 'Дежурный сегодня';
+  };
+
   const stats = {
     totalUsers: users.length,
     activeUsers: users.filter((u) => u.active).length,
-    schedulesThisMonth: schedules.length,
     todayOnDuty: getTodayOnDutyText(),
   };
 
@@ -47,7 +54,7 @@ const Dashboard: React.FC = () => {
       <h2 className="text-3xl font-bold text-gray-900">Главная</h2>
 
       {/* Статистика */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="bg-white p-6 rounded-lg shadow">
           <h3 className="text-sm font-medium text-gray-500">Всего пользователей</h3>
           <p className="text-3xl font-bold text-gray-900 mt-2">{stats.totalUsers}</p>
@@ -57,11 +64,7 @@ const Dashboard: React.FC = () => {
           <p className="text-3xl font-bold text-gray-900 mt-2">{stats.activeUsers}</p>
         </div>
         <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-sm font-medium text-gray-500">Дежурств в этом месяце</h3>
-          <p className="text-3xl font-bold text-gray-900 mt-2">{stats.schedulesThisMonth}</p>
-        </div>
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-sm font-medium text-gray-500">Дежурный сегодня</h3>
+          <h3 className="text-sm font-medium text-gray-500">{getDutyCardTitle()}</h3>
           <p className="text-lg font-semibold text-gray-900 mt-2">{stats.todayOnDuty}</p>
         </div>
       </div>

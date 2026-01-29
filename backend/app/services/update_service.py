@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from datetime import date, datetime, time
+from zoneinfo import ZoneInfo
 from typing import List, Optional, Set, Dict, Generator, AsyncGenerator
 from app.models import UpdateRule, DutySchedule, User, UpdateHistory, UpdateSource
 from app.services.bitrix_client import get_bitrix_client
@@ -9,7 +10,15 @@ import logging
 import json
 import asyncio
 
+# Московский часовой пояс (MSK, UTC+3)
+MSK_TIMEZONE = ZoneInfo("Europe/Moscow")
+
 logger = logging.getLogger(__name__)
+
+
+def get_today_msk() -> date:
+    """Получить текущую дату в московском часовом поясе"""
+    return datetime.now(MSK_TIMEZONE).date()
 
 
 class UpdateService:
@@ -322,7 +331,7 @@ class UpdateService:
                         'entity_id': int(entity_id),
                         'old_assigned_by_id': old_assigned_id,
                         'new_assigned_by_id': user_id,
-                        'update_source': UpdateSource.SCHEDULED if update_date == date.today() else UpdateSource.MANUAL,
+                        'update_source': UpdateSource.SCHEDULED if update_date == get_today_msk() else UpdateSource.MANUAL,
                         'rule_id': rule.id
                     })
                     
@@ -364,7 +373,7 @@ class UpdateService:
                                         'entity_id': contact_id,
                                         'old_assigned_by_id': old_contact_assigned_id,
                                         'new_assigned_by_id': user_id,
-                                        'update_source': UpdateSource.SCHEDULED if update_date == date.today() else UpdateSource.MANUAL,
+                                        'update_source': UpdateSource.SCHEDULED if update_date == get_today_msk() else UpdateSource.MANUAL,
                                         'rule_id': rule.id,
                                         'related_entity_type': 'deal',
                                         'related_entity_id': deal_id
@@ -407,7 +416,7 @@ class UpdateService:
                                         'entity_id': company_id,
                                         'old_assigned_by_id': old_company_assigned_id,
                                         'new_assigned_by_id': user_id,
-                                        'update_source': UpdateSource.SCHEDULED if update_date == date.today() else UpdateSource.MANUAL,
+                                        'update_source': UpdateSource.SCHEDULED if update_date == get_today_msk() else UpdateSource.MANUAL,
                                         'rule_id': rule.id,
                                         'related_entity_type': 'deal',
                                         'related_entity_id': deal_id
@@ -544,12 +553,14 @@ class UpdateService:
     
     async def update_entities_now(self) -> dict:
         """
-        Принудительное обновление ответственных на текущую дату
+        Принудительное обновление ответственных на текущую дату (в московском времени)
         
         Returns:
             Словарь с результатами обновления
         """
-        today = date.today()
+        # Используем московское время для определения текущей даты
+        now_msk = datetime.now(MSK_TIMEZONE)
+        today = now_msk.date()
         return await self.update_entities_for_date(today)
     
     def should_update_rule(self, rule: UpdateRule, check_datetime: datetime) -> bool:
@@ -558,23 +569,33 @@ class UpdateService:
         
         Args:
             rule: Правило обновления
-            check_datetime: Дата и время для проверки
+            check_datetime: Дата и время для проверки (должно быть в московском времени)
             
         Returns:
             True если нужно обновлять, False иначе
         """
-        # Проверяем время обновления
+        # Убеждаемся, что время в московском часовом поясе
+        if check_datetime.tzinfo is None:
+            # Если время без часового пояса, считаем его московским
+            check_datetime_msk = check_datetime.replace(tzinfo=MSK_TIMEZONE)
+        elif check_datetime.tzinfo != MSK_TIMEZONE:
+            # Если время в другом часовом поясе, конвертируем в московское
+            check_datetime_msk = check_datetime.astimezone(MSK_TIMEZONE)
+        else:
+            check_datetime_msk = check_datetime
+        
+        # Проверяем время обновления (сравниваем время в московском часовом поясе)
         update_time = rule.update_time
-        check_time = check_datetime.time()
+        check_time = check_datetime_msk.time()
         
         if check_time < update_time:
             return False
         
-        # Проверяем дни недели
+        # Проверяем дни недели (используем московское время)
         if rule.update_days:
             try:
                 update_days = json.loads(rule.update_days) if isinstance(rule.update_days, str) else rule.update_days
-                weekday = check_datetime.weekday() + 1  # Python weekday: 0=Monday, Bitrix: 1=Monday
+                weekday = check_datetime_msk.weekday() + 1  # Python weekday: 0=Monday, Bitrix: 1=Monday
                 if weekday not in update_days:
                     return False
             except Exception as e:
