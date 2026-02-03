@@ -152,6 +152,42 @@ async def handle_bitrix_webhook(
                     "date": str(today)
                 }
             
+            # Проверяем, есть ли текущий ответственный в графике дежурств
+            current_assigned_str = deal.get('ASSIGNED_BY_ID')
+            if current_assigned_str:
+                try:
+                    current_assigned_id = int(current_assigned_str)
+                    # Проверяем, есть ли текущий ответственный среди всех дежурных пользователей
+                    duty_user_ids = {u.id for u in duty_users}
+                    if current_assigned_id in duty_user_ids:
+                        # Ответственный уже в графике - не обновляем, но записываем в историю
+                        rule = applicable_rules[0]  # Используем первое применимое правило
+                        history_entry = UpdateHistory(
+                            entity_type='deal',
+                            entity_id=deal_id,
+                            old_assigned_by_id=current_assigned_id,
+                            new_assigned_by_id=current_assigned_id,
+                            update_source=UpdateSource.WEBHOOK,
+                            rule_id=rule.id
+                        )
+                        db.add(history_entry)
+                        db.commit()
+                        
+                        logger.info(
+                            f"Сделка {deal_id} уже имеет ответственного {current_assigned_id}, "
+                            f"который есть в графике дежурств. Обновление не требуется."
+                        )
+                        return {
+                            "status": "skipped",
+                            "reason": "Already assigned to duty user",
+                            "deal_id": deal_id,
+                            "assigned_user_id": current_assigned_id,
+                            "date": str(today)
+                        }
+                except (ValueError, TypeError):
+                    # Если не удалось преобразовать в int, продолжаем обычную логику
+                    pass
+            
             # Определяем пользователя для назначения
             # Используем первое применимое правило и дежурных пользователей из этого правила
             rule = applicable_rules[0]
