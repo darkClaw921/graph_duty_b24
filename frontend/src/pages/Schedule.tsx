@@ -7,6 +7,8 @@ import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
 import { PreviewUpdatesModal } from '../components/common/PreviewUpdatesModal';
 import { utilsApi, UpdateProgress, PreviewEntity } from '../services/utilsApi';
+import { scheduleApi } from '../services/scheduleApi';
+import { historyApi } from '../services/historyApi';
 
 const Schedule: React.FC = () => {
   const { schedules, fetchSchedules, createSchedule, updateSchedule, deleteSchedule, loading } = useScheduleStore();
@@ -28,6 +30,9 @@ const Schedule: React.FC = () => {
   const [previewTotalCount, setPreviewTotalCount] = useState(0);
   const [previewDate, setPreviewDate] = useState('');
   const [loadingPreview, setLoadingPreview] = useState(false);
+  const [dealStats, setDealStats] = useState<Record<number, number>>({});
+  const [entityStats, setEntityStats] = useState<Record<string, Record<string, number>>>({});
+  const [loadingStats, setLoadingStats] = useState<Record<string, boolean>>({});
   const lastProgressRef = useRef<{ currentCount: number; timestamp: number } | null>(null);
 
   useEffect(() => {
@@ -40,6 +45,29 @@ const Schedule: React.FC = () => {
     };
     loadData();
   }, [currentMonth, fetchSchedules, fetchUsers]);
+
+  // Загружаем статистику для сегодняшней даты
+  useEffect(() => {
+    const loadStats = async () => {
+      const today = format(new Date(), 'yyyy-MM-dd');
+      const monthStart = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
+      const monthEnd = format(endOfMonth(currentMonth), 'yyyy-MM-dd');
+      
+      // Загружаем статистику только если сегодняшний день в текущем месяце
+      if (today >= monthStart && today <= monthEnd) {
+        try {
+          const stats = await scheduleApi.getStats(today);
+          setDealStats(stats);
+        } catch (error) {
+          console.error('Ошибка при загрузке статистики:', error);
+          setDealStats({});
+        }
+      } else {
+        setDealStats({});
+      }
+    };
+    loadStats();
+  }, [currentMonth]);
 
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
@@ -69,6 +97,46 @@ const Schedule: React.FC = () => {
   const getUsersOnDuty = (date: Date) => {
     const schedule = getScheduleForDate(date);
     return schedule?.users || [];
+  };
+
+  // Получаем метку типа сущности
+  const getEntityTypeLabel = (type: string): string => {
+    const labels: Record<string, string> = {
+      deal: 'Сделка',
+      contact: 'Контакт',
+      company: 'Компания',
+      lead: 'Лид',
+    };
+    return labels[type] || type;
+  };
+
+  // Загружаем статистику по сущностям для пользователя на дату
+  const loadEntityStats = async (date: Date, userId: number) => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    const statsKey = `${dateStr}_${userId}`;
+    
+    // Если статистика уже загружена, не загружаем повторно
+    if (entityStats[statsKey]) {
+      return;
+    }
+
+    // Если уже загружается, не запускаем повторную загрузку
+    if (loadingStats[statsKey]) {
+      return;
+    }
+
+    setLoadingStats(prev => ({ ...prev, [statsKey]: true }));
+    
+    try {
+      const stats = await historyApi.getUserEntityStats(dateStr, userId);
+      setEntityStats(prev => ({ ...prev, [statsKey]: stats }));
+    } catch (error) {
+      console.error('Ошибка при загрузке статистики по сущностям:', error);
+      // В случае ошибки сохраняем пустой объект
+      setEntityStats(prev => ({ ...prev, [statsKey]: {} }));
+    } finally {
+      setLoadingStats(prev => ({ ...prev, [statsKey]: false }));
+    }
   };
 
   // Подсчет дней дежурства для пользователя
@@ -297,6 +365,21 @@ const Schedule: React.FC = () => {
           const end = format(endOfMonth(currentMonth), 'yyyy-MM-dd');
           fetchSchedules(start, end);
           setLastUpdateTime(new Date());
+          
+          // Обновляем статистику для сегодняшней даты
+          (async () => {
+            const today = format(new Date(), 'yyyy-MM-dd');
+            const monthStart = format(startOfMonth(currentMonth), 'yyyy-MM-dd');
+            const monthEnd = format(endOfMonth(currentMonth), 'yyyy-MM-dd');
+            if (today >= monthStart && today <= monthEnd) {
+              try {
+                const stats = await scheduleApi.getStats(today);
+                setDealStats(stats);
+              } catch (error) {
+                console.error('Ошибка при обновлении статистики:', error);
+              }
+            }
+          })();
           
           // Если сущностей не было обновлено, показываем сообщение
           if (finalCount === 0) {
@@ -562,11 +645,57 @@ const Schedule: React.FC = () => {
                           const usersOnDuty = getUsersOnDuty(day);
                           const dutyCount = usersOnDuty.length;
                           const isMultipleUsers = dutyCount > 1;
+                          const isToday = isSameDay(day, new Date());
+                          const dateStr = format(day, 'yyyy-MM-dd');
+                          const statsKey = `${dateStr}_${user.id}`;
+                          const stats = entityStats[statsKey] || {};
+                          
+                          // Формируем tooltip
+                          let tooltipText = `${format(day, 'd MMMM yyyy', { locale: ru })} - ${userName}. `;
+                          if (hasDuty) {
+                            tooltipText += `Дежурство (${dutyCount} ${dutyCount === 1 ? 'пользователь' : 'пользователей'})`;
+                            
+                            // Добавляем статистику по сущностям
+                            const entityTypes = ['deal', 'contact', 'company', 'lead'];
+                            const statsParts: string[] = [];
+                            
+                            entityTypes.forEach(entityType => {
+                              const count = stats[entityType] || 0;
+                              if (count > 0) {
+                                statsParts.push(`${getEntityTypeLabel(entityType)}: ${count}`);
+                              }
+                            });
+                            
+                            if (statsParts.length > 0) {
+                              tooltipText += `\nСтатистика по сущностям:\n${statsParts.join(', ')}`;
+                            } else if (loadingStats[statsKey]) {
+                              // Если статистика загружается
+                              tooltipText += '\nСтатистика загружается...';
+                            } else if (entityStats[statsKey] !== undefined) {
+                              // Если статистика загружена, но сущностей нет
+                              tooltipText += '\nСущностей не назначено';
+                            }
+                            
+                            // Для сегодняшнего дня также показываем информацию о планировщике
+                            if (isToday) {
+                              const dealCount = dealStats[user.id] ?? 0;
+                              if (dealCount > 0) {
+                                tooltipText += `\nНазначено сделок из планировщика: ${dealCount}`;
+                              }
+                            }
+                          } else {
+                            tooltipText += 'Клик для назначения';
+                          }
                           
                           return (
                             <td
                               key={day.toISOString()}
                               onClick={() => handleCellClick(day, user.id)}
+                              onMouseEnter={() => {
+                                if (hasDuty) {
+                                  loadEntityStats(day, user.id);
+                                }
+                              }}
                               className={`border border-gray-300 px-0 py-1 text-center cursor-pointer transition-colors w-[32px] ${
                                 hasDuty
                                   ? isMultipleUsers
@@ -574,7 +703,7 @@ const Schedule: React.FC = () => {
                                     : 'bg-green-100 hover:bg-green-200'
                                   : 'bg-white hover:bg-gray-100'
                               }`}
-                              title={`${format(day, 'd MMMM yyyy', { locale: ru })} - ${userName}. ${hasDuty ? `Дежурство (${dutyCount} ${dutyCount === 1 ? 'пользователь' : 'пользователей'})` : 'Клик для назначения'}`}
+                              title={tooltipText}
                             >
                               {hasDuty ? (
                                 <div className="flex items-center justify-center">

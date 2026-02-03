@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
-from datetime import date
+from sqlalchemy import func
+from typing import List, Optional, Dict
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from app.database import get_db
-from app.models import DutySchedule, DutyScheduleUser, User
+from app.models import DutySchedule, DutyScheduleUser, User, UpdateHistory, UpdateSource
 from app.schemas.duty_schedule import (
     DutySchedule as DutyScheduleSchema,
     DutyScheduleCreate,
@@ -227,3 +229,46 @@ def generate_schedule(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка генерации графика: {str(e)}")
+
+
+@router.get("/stats/{stats_date}")
+def get_schedule_stats(
+    stats_date: date,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Получить статистику по количеству сделок, назначенных из планировщика для каждого пользователя на указанную дату
+    
+    Returns:
+        Словарь {user_id: count} где count - количество сделок, назначенных из планировщика
+    """
+    try:
+        # Определяем начало и конец дня для указанной даты в московском часовом поясе
+        MSK_TIMEZONE = ZoneInfo("Europe/Moscow")
+        start_datetime = datetime.combine(stats_date, datetime.min.time(), tzinfo=MSK_TIMEZONE)
+        end_datetime = datetime.combine(stats_date, datetime.max.time(), tzinfo=MSK_TIMEZONE)
+        
+        # Запрос к UpdateHistory: фильтруем по типу сделок, источнику SCHEDULED и дате создания
+        stats_query = db.query(
+            UpdateHistory.new_assigned_by_id,
+            func.count(UpdateHistory.id).label('count')
+        ).filter(
+            UpdateHistory.entity_type == 'deal',
+            UpdateHistory.update_source == UpdateSource.SCHEDULED,
+            UpdateHistory.created_at >= start_datetime,
+            UpdateHistory.created_at <= end_datetime
+        ).group_by(UpdateHistory.new_assigned_by_id)
+        
+        # Получаем результаты и формируем словарь
+        stats_result = stats_query.all()
+        stats_dict: Dict[int, int] = {}
+        
+        for user_id, count in stats_result:
+            if user_id:
+                stats_dict[user_id] = count
+        
+        return stats_dict
+    except Exception as e:
+        logger.error(f"Ошибка при получении статистики для даты {stats_date}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Ошибка получения статистики: {str(e)}")

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { historyApi } from '../services/historyApi';
 import { UpdateHistory, UpdateHistoryFilters, UpdateSource } from '../types/history';
 import { Input } from '../components/common/Input';
@@ -20,6 +20,7 @@ const History: React.FC = () => {
     entity_id: '',
     start_date: '',
     end_date: '',
+    update_source: '',
   });
 
   useEffect(() => {
@@ -47,6 +48,7 @@ const History: React.FC = () => {
         entity_id: filters.entity_id,
         start_date: filters.start_date,
         end_date: filters.end_date,
+        update_source: filters.update_source,
       });
       setTotalCount(countData.count);
     } catch (err) {
@@ -62,6 +64,7 @@ const History: React.FC = () => {
       entity_id: localFilters.entity_id ? parseInt(localFilters.entity_id) : undefined,
       start_date: localFilters.start_date || undefined,
       end_date: localFilters.end_date || undefined,
+      update_source: localFilters.update_source ? localFilters.update_source as UpdateSource : undefined,
     });
   };
 
@@ -71,6 +74,7 @@ const History: React.FC = () => {
       entity_id: '',
       start_date: '',
       end_date: '',
+      update_source: '',
     });
     setFilters({
       skip: 0,
@@ -108,6 +112,28 @@ const History: React.FC = () => {
   const currentPage = Math.floor((filters.skip || 0) / (filters.limit || 50)) + 1;
   const totalPages = Math.ceil(totalCount / (filters.limit || 50));
 
+  // Подсчитываем статистику по менеджерам (по полю "На кого")
+  const managerStats = useMemo(() => {
+    const stats = new Map<number, { name: string; count: number }>();
+    
+    history.forEach((item) => {
+      const managerId = item.new_assigned_by_id;
+      const managerName = item.new_user_name || `ID: ${managerId}`;
+      
+      if (stats.has(managerId)) {
+        const existing = stats.get(managerId)!;
+        stats.set(managerId, { ...existing, count: existing.count + 1 });
+      } else {
+        stats.set(managerId, { name: managerName, count: 1 });
+      }
+    });
+    
+    // Преобразуем в массив и сортируем по количеству (по убыванию)
+    return Array.from(stats.entries())
+      .map(([id, data]) => ({ id, ...data }))
+      .sort((a, b) => b.count - a.count);
+  }, [history]);
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -117,7 +143,7 @@ const History: React.FC = () => {
       {/* Фильтры */}
       <div className="bg-white rounded-lg shadow p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Фильтры</h3>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Тип сущности
@@ -165,12 +191,53 @@ const History: React.FC = () => {
               onChange={(e) => setLocalFilters({ ...localFilters, end_date: e.target.value })}
             />
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Источник
+            </label>
+            <select
+              value={localFilters.update_source}
+              onChange={(e) => setLocalFilters({ ...localFilters, update_source: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">Все</option>
+              <option value={UpdateSource.WEBHOOK}>Webhook</option>
+              <option value={UpdateSource.SCHEDULED}>Планировщик</option>
+              <option value={UpdateSource.MANUAL}>Вручную</option>
+            </select>
+          </div>
         </div>
-        <div className="flex gap-2 mt-4">
-          <Button onClick={handleApplyFilters}>Применить</Button>
-          <Button onClick={handleResetFilters} variant="secondary">
-            Сбросить
-          </Button>
+        <div className="flex gap-2 mt-4 items-start">
+          <div className="flex gap-2">
+            <Button onClick={handleApplyFilters}>Применить</Button>
+            <Button onClick={handleResetFilters} variant="secondary">
+              Сбросить
+            </Button>
+          </div>
+          
+          {/* Статистика по менеджерам */}
+          {managerStats.length > 0 && (
+            <div className="ml-auto flex flex-col gap-2 min-w-0 flex-1">
+              <div className="text-sm font-semibold text-gray-700">
+                Статистика по менеджерам (На кого):
+                <span className="ml-2 text-xs font-normal text-gray-500">
+                  (на текущей странице)
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {managerStats.map((stat) => (
+                  <div
+                    key={stat.id}
+                    className="px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-md text-sm whitespace-nowrap"
+                    title={`${stat.name}: ${stat.count} сущностей`}
+                  >
+                    <span className="font-medium text-gray-900">{stat.name}:</span>
+                    <span className="ml-1 text-blue-700 font-semibold">{stat.count}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
-from typing import List, Optional
+from sqlalchemy import desc, func
+from typing import List, Optional, Dict
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from app.database import get_db
-from app.models import UpdateHistory, User
+from app.models import UpdateHistory, User, UpdateSource
 from app.schemas.update_history import UpdateHistoryWithUsers
 from app.auth.dependencies import get_current_user
 import logging
@@ -22,6 +23,7 @@ def get_update_history(
     entity_id: Optional[int] = Query(None, description="ID сущности"),
     start_date: Optional[date] = Query(None, description="Начальная дата"),
     end_date: Optional[date] = Query(None, description="Конечная дата"),
+    update_source: Optional[UpdateSource] = Query(None, description="Источник обновления (webhook, scheduled, manual)"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -45,6 +47,9 @@ def get_update_history(
         
         if end_date:
             query = query.filter(UpdateHistory.created_at <= datetime.combine(end_date, datetime.max.time()))
+        
+        if update_source:
+            query = query.filter(UpdateHistory.update_source == update_source)
         
         # Сортируем по дате создания (новые сначала)
         query = query.order_by(desc(UpdateHistory.created_at))
@@ -96,6 +101,7 @@ def get_update_history_count(
     entity_id: Optional[int] = Query(None, description="ID сущности"),
     start_date: Optional[date] = Query(None, description="Начальная дата"),
     end_date: Optional[date] = Query(None, description="Конечная дата"),
+    update_source: Optional[UpdateSource] = Query(None, description="Источник обновления (webhook, scheduled, manual)"),
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
@@ -118,8 +124,55 @@ def get_update_history_count(
         if end_date:
             query = query.filter(UpdateHistory.created_at <= datetime.combine(end_date, datetime.max.time()))
         
+        if update_source:
+            query = query.filter(UpdateHistory.update_source == update_source)
+        
         count = query.count()
         return {"count": count}
     except Exception as e:
         logger.error(f"Ошибка при подсчете истории изменений: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Ошибка при подсчете истории: {str(e)}")
+
+
+@router.get("/stats/{stats_date}/{user_id}")
+def get_user_entity_stats(
+    stats_date: date,
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Получить статистику по сущностям для пользователя на указанную дату
+    
+    Returns:
+        Словарь {entity_type: count} где entity_type - тип сущности (deal, contact, company, lead),
+        count - количество сущностей, назначенных на пользователя в этот день
+    """
+    try:
+        # Определяем начало и конец дня для указанной даты в московском часовом поясе
+        MSK_TIMEZONE = ZoneInfo("Europe/Moscow")
+        start_datetime = datetime.combine(stats_date, datetime.min.time(), tzinfo=MSK_TIMEZONE)
+        end_datetime = datetime.combine(stats_date, datetime.max.time(), tzinfo=MSK_TIMEZONE)
+        
+        # Запрос к UpdateHistory: группируем по типу сущности
+        stats_query = db.query(
+            UpdateHistory.entity_type,
+            func.count(UpdateHistory.id).label('count')
+        ).filter(
+            UpdateHistory.new_assigned_by_id == user_id,
+            UpdateHistory.created_at >= start_datetime,
+            UpdateHistory.created_at <= end_datetime
+        ).group_by(UpdateHistory.entity_type)
+        
+        # Получаем результаты и формируем словарь
+        stats_result = stats_query.all()
+        stats_dict: Dict[str, int] = {}
+        
+        for entity_type, count in stats_result:
+            if entity_type:
+                stats_dict[entity_type] = count
+        
+        return stats_dict
+    except Exception as e:
+        logger.error(f"Ошибка при получении статистики для пользователя {user_id} на дату {stats_date}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Ошибка получения статистики: {str(e)}")

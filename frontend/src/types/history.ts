@@ -24,6 +24,7 @@ export interface UpdateHistoryFilters {
   entity_id?: number;
   start_date?: string;
   end_date?: string;
+  update_source?: UpdateSource;
   skip?: number;
   limit?: number;
 }

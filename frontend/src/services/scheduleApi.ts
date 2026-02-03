@@ -36,4 +36,9 @@ export const scheduleApi = {
     });
     return response.data;
   },
+
+  getStats: async (date: string): Promise<Record<number, number>> => {
+    const response = await api.get<Record<number, number>>(`/schedule/stats/${date}`);
+    return response.data;
+  },
 };
