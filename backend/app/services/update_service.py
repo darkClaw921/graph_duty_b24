@@ -295,7 +295,6 @@ class UpdateService:
         
         # Подготавливаем обновления
         updates = []
-        skipped_count = 0
         related_updates = []  # Обновления для связанных контактов и компаний
         history_entries = []  # Записи истории для сохранения после обновления
         
@@ -303,14 +302,8 @@ class UpdateService:
             for entity_id in entity_ids:
                 entity = next((e for e in filtered_entities if e['ID'] == entity_id), None)
                 if entity:
-                    # Пропускаем, если ответственный уже установлен правильно
-                    current_assigned = entity.get('ASSIGNED_BY_ID')
-                    if current_assigned == str(user_id):
-                        skipped_count += 1
-                        logger.debug(f"Сущность {entity_id} уже имеет правильного ответственного {user_id}, пропускаем")
-                        continue
-                    
                     # Сохраняем старый ответственный для истории
+                    current_assigned = entity.get('ASSIGNED_BY_ID')
                     old_assigned_id = None
                     if current_assigned:
                         try:
@@ -318,6 +311,7 @@ class UpdateService:
                         except (ValueError, TypeError):
                             pass
                     
+                    # Всегда обновляем сущность для перераспределения по правилам распределения
                     updates.append({
                         'ID': entity_id,
                         'fields': {
@@ -427,12 +421,12 @@ class UpdateService:
                             else:
                                 logger.warning(f"Компания {company_id} не найдена в batch данных")
         
-        logger.info(f"Подготовлено {len(updates)} обновлений для правила {rule.id}, пропущено {skipped_count} (уже имеют правильного ответственного)")
+        logger.info(f"Подготовлено {len(updates)} обновлений для правила {rule.id}")
         if related_updates:
             logger.info(f"Подготовлено {len(related_updates)} обновлений связанных контактов и компаний для правила {rule.id}")
         
         if not updates and not related_updates:
-            logger.info(f"Нет сущностей для обновления для правила {rule.id} (все уже имеют правильного ответственного или нет распределенных сущностей)")
+            logger.info(f"Нет сущностей для обновления для правила {rule.id} (нет распределенных сущностей)")
             return 0
         
         # Вычисляем общее количество сущностей для обновления
