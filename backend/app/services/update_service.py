@@ -312,10 +312,12 @@ class UpdateService:
                             pass
                     
                     # Всегда обновляем сущность для перераспределения по правилам распределения
+                    # ВРЕМЕННОЕ РЕШЕНИЕ: также обновляем поле UF_CRM_1770115634
                     updates.append({
                         'ID': entity_id,
                         'fields': {
-                            'ASSIGNED_BY_ID': user_id
+                            'ASSIGNED_BY_ID': user_id,
+                            # 'UF_CRM_1770115634': user_id  # Временное поле, будет удалено позже
                         }
                     })
                     
@@ -355,7 +357,8 @@ class UpdateService:
                                     related_updates.append({
                                         'ID': contact_id,
                                         'fields': {
-                                            'ASSIGNED_BY_ID': user_id
+                                            'ASSIGNED_BY_ID': user_id,
+                                            # 'UF_CRM_1770115634': user_id  # Временное поле, будет удалено позже
                                         },
                                         'entity_type': 'contact',
                                         'old_assigned_by_id': old_contact_assigned_id
@@ -398,7 +401,8 @@ class UpdateService:
                                     related_updates.append({
                                         'ID': company_id,
                                         'fields': {
-                                            'ASSIGNED_BY_ID': user_id
+                                            'ASSIGNED_BY_ID': user_id,
+                                            # 'UF_CRM_1770115634': user_id  # Временное поле, будет удалено позже
                                         },
                                         'entity_type': 'company',
                                         'old_assigned_by_id': old_company_assigned_id

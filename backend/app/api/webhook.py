@@ -249,10 +249,14 @@ async def handle_bitrix_webhook(
                     pass
             
             # Обновляем ответственного в сделке
+            # ВРЕМЕННОЕ РЕШЕНИЕ: также обновляем поле UF_CRM_1770115634
             await bitrix_client.update_entity(
                 'deal',
                 deal_id,
-                {'ASSIGNED_BY_ID': assigned_user.id}
+                {
+                    'ASSIGNED_BY_ID': assigned_user.id,
+                    'UF_CRM_1770115634': assigned_user.id  # Временное поле, будет удалено позже
+                }
             )
             
             # Записываем историю изменения
@@ -300,10 +304,14 @@ async def handle_bitrix_webhook(
                                     pass
                             
                             # Обновляем ответственного в контакте
+                            # ВРЕМЕННОЕ РЕШЕНИЕ: также обновляем поле UF_CRM_1770115634
                             await bitrix_client.update_entity(
                                 'contact',
                                 contact_id,
-                                {'ASSIGNED_BY_ID': assigned_user.id}
+                                {
+                                    'ASSIGNED_BY_ID': assigned_user.id,
+                                    'UF_CRM_1770115634': assigned_user.id  # Временное поле, будет удалено позже
+                                }
                             )
                             
                             # Записываем историю изменения для связанного контакта
@@ -357,10 +365,14 @@ async def handle_bitrix_webhook(
                                         pass
                                 
                                 # Обновляем ответственного в компании
+                                # ВРЕМЕННОЕ РЕШЕНИЕ: также обновляем поле UF_CRM_1770115634
                                 await bitrix_client.update_entity(
                                     'company',
                                     company_id,
-                                    {'ASSIGNED_BY_ID': assigned_user.id}
+                                    {
+                                        'ASSIGNED_BY_ID': assigned_user.id,
+                                        'UF_CRM_1770115634': assigned_user.id  # Временное поле, будет удалено позже
+                                    }
                                 )
                                 
                                 # Записываем историю изменения для связанной компании
