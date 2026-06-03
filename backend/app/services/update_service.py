@@ -28,6 +28,21 @@ class UpdateService:
         self.db = db
         self.bitrix_client = get_bitrix_client()
         self.schedule_service = ScheduleService(db)
+
+    def _release_db_connection(self) -> None:
+        """
+        Зафиксировать текущую транзакцию, чтобы вернуть соединение из пула.
+
+        Вызывается перед длительными сетевыми вызовами к Bitrix24 в потоковом
+        обновлении: иначе открытая транзакция (после чтения) удерживала бы
+        соединение всё время HTTP-вызовов и исчерпывала пул.
+        Сессия должна создаваться с expire_on_commit=False, чтобы уже
+        загруженные объекты (правила, пользователи) оставались доступными.
+        """
+        try:
+            self.db.commit()
+        except Exception:
+            self.db.rollback()
     
     async def update_entities_for_date(self, update_date: date) -> dict:
         """
@@ -1145,7 +1160,10 @@ class UpdateService:
         total_updated = 0
         errors = []
         processed_rules = 0
-        
+
+        # Освобождаем соединение из пула перед длительными вызовами к Bitrix24
+        self._release_db_connection()
+
         # Получаем общее количество сущностей для обновления
         total_entities_count = await self.get_entities_count_for_date(update_date)
         total_count = total_entities_count.get("total_count", 0)
@@ -1198,7 +1216,10 @@ class UpdateService:
                 
                 # Фильтруем дежурных пользователей - оставляем только тех, кто есть в правиле
                 rule_duty_users = [u for u in duty_users if u.id in rule_user_ids]
-                
+
+                # Освобождаем соединение из пула перед длительными вызовами к Bitrix24
+                self._release_db_connection()
+
                 # Получаем количество сущностей для этого правила
                 rule_entities_count = await self._get_rule_entities_count(rule, rule_duty_users)
                 
@@ -1236,7 +1257,10 @@ class UpdateService:
                 
                 # Сохраняем начальное значение для правила
                 rule_start_entity_count = current_entity_count
-                
+
+                # Освобождаем соединение из пула перед длительным обновлением через Bitrix24
+                self._release_db_connection()
+
                 # Запускаем обновление правила в фоне
                 update_task = asyncio.create_task(
                     self._update_rule(

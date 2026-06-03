@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 from typing import Optional
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.services.update_service import UpdateService, get_today_msk
 from app.auth.dependencies import get_current_user
 import json
@@ -55,22 +55,30 @@ async def get_update_count(
 @router.post("/update-now-stream")
 async def update_entities_now_stream(
     update_date: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    """Принудительное обновление ответственных с прогрессом через streaming"""
+    """Принудительное обновление ответственных с прогрессом через streaming
+
+    Важно: НЕ используем request-scoped Depends(get_db) — иначе FastAPI удерживал
+    бы соединение из пула на всё время стрима (минуты). Генератор владеет
+    собственной короткоживущей сессией и закрывает её в finally; во время длительных
+    вызовов к Bitrix24 соединение возвращается в пул (см. UpdateService).
+    """
     try:
         logger.info(f"Запрос на streaming обновление для даты: {update_date}")
-        service = UpdateService(db)
         if update_date:
             target_date = date.fromisoformat(update_date)
         else:
             target_date = get_today_msk()
-        
+
         logger.info(f"Целевая дата: {target_date}")
-        
+
         async def generate():
+            # Собственная сессия генератора (expire_on_commit=False, чтобы объекты
+            # оставались доступными после commit, освобождающего соединение).
+            db = SessionLocal(expire_on_commit=False)
             try:
+                service = UpdateService(db)
                 logger.info("Начало генерации прогресса")
                 async for progress in service.update_entities_for_date_with_progress(target_date):
                     logger.info(f"Отправка прогресса: {progress.get('type', 'unknown')}")
@@ -86,6 +94,8 @@ async def update_entities_now_stream(
                     "date": str(target_date)
                 }
                 yield f"data: {json.dumps(error_progress, ensure_ascii=False)}\n\n"
+            finally:
+                db.close()
         
         return StreamingResponse(
             generate(),
