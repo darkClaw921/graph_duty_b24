@@ -7,6 +7,16 @@ import asyncio
 logger = logging.getLogger(__name__)
 
 
+# fast_bitrix24 хранит счётчик successive_results внутри singleton-обработчика (srh).
+# При длительной серии сетевых ошибок / 5XX он уходит в большой минус, а autothrottle
+# считает экспоненциальную задержку delay = 0.5 * 1.5**(-successive_results - 4).
+# Например, при successive_results = -45 это ~8 292 999 секунд (~96 дней), и запрос
+# фактически никогда не уходит на сервер — сделки перестают обновляться.
+# Чтобы транзиентная ошибка не превращалась в вечное зависание, ограничиваем нижнюю
+# границу счётчика: при THROTTLE_BACKOFF_FLOOR = -9 максимальная задержка ~3.8 сек.
+THROTTLE_BACKOFF_FLOOR = -9
+
+
 class BitrixClient:
     """Клиент для работы с Bitrix24 REST API через библиотеку fast_bitrix24"""
     
@@ -18,7 +28,40 @@ class BitrixClient:
         
         self.client = Bitrix(webhook)
         logger.info("Bitrix24 клиент инициализирован")
-    
+
+    def _guard_throttle(self) -> None:
+        """Не даёт автотроттлингу fast_bitrix24 уйти в патологический backoff.
+
+        После серии ошибок счётчик successive_results может опуститься до больших
+        отрицательных значений, и тогда autothrottle рассчитывает многодневную
+        задержку перед запросом. Ограничиваем счётчик снизу, чтобы максимальная
+        задержка оставалась в пределах нескольких секунд, и восстанавливаем лимит
+        одновременных запросов — клиент самовосстанавливается после сбоев Bitrix.
+        """
+        srh = getattr(self.client, "srh", None)
+        if srh is None:
+            return
+        if srh.successive_results < THROTTLE_BACKOFF_FLOOR:
+            logger.warning(
+                "Автотроттлинг fast_bitrix24 деградировал "
+                "(successive_results=%s), сбрасываю до %s, чтобы запросы не зависали",
+                srh.successive_results,
+                THROTTLE_BACKOFF_FLOOR,
+            )
+            srh.successive_results = THROTTLE_BACKOFF_FLOOR
+            # возвращаем лимит одновременных запросов, чтобы не застрять на 1
+            srh.mcr_cur_limit = srh.mcr_max
+
+    async def _get_all(self, method: str, params: Optional[Dict[str, Any]] = None):
+        """get_all с предварительной проверкой состояния автотроттлинга."""
+        self._guard_throttle()
+        return await self.client.get_all(method, params=params)
+
+    async def _call(self, method: str, items=None):
+        """call с предварительной проверкой состояния автотроттлинга."""
+        self._guard_throttle()
+        return await self.client.call(method, items)
+
     async def get_all_users(self) -> List[Dict[str, Any]]:
         """
         Получить всех пользователей из Bitrix24
@@ -27,7 +70,7 @@ class BitrixClient:
             Список пользователей с полями ID, NAME, LAST_NAME, EMAIL, ACTIVE
         """
         try:
-            users = await self.client.get_all(
+            users = await self._get_all(
                 'user.get',
                 params={
                     'select': ['ID', 'NAME', 'LAST_NAME', 'EMAIL', 'ACTIVE']
@@ -51,7 +94,7 @@ class BitrixClient:
         """
         try:
             method = f'crm.{entity_type}.fields'
-            fields = await self.client.get_all(method)
+            fields = await self._get_all(method)
             logger.info(f"Получено {len(fields)} полей для сущности {entity_type}")
             return fields
         except Exception as e:
@@ -85,7 +128,7 @@ class BitrixClient:
             
             method = f'crm.{entity_type}.list'
             # Используем get_all для автоматической обработки пагинации и получения всех данных
-            entities = await self.client.get_all(method, params=params)
+            entities = await self._get_all(method, params=params)
             
             logger.info(f"Получено {len(entities)} сущностей типа {entity_type}")
             return entities
@@ -110,7 +153,7 @@ class BitrixClient:
         """
         try:
             method = f'crm.{entity_type}.update'
-            results = await self.client.call(method, updates)
+            results = await self._call(method, updates)
             logger.info(f"Обновлено {len(updates)} сущностей типа {entity_type}")
             return results
         except Exception as e:
@@ -145,7 +188,7 @@ class BitrixClient:
                 params['select'] = select
             
             # get_all работает синхронно и возвращает список результатов
-            entities = await self.client.get_all(method, params=params)
+            entities = await self._get_all(method, params=params)
             
             if entities and len(entities) > 0:
                 entity_data = entities[0]
@@ -177,7 +220,7 @@ class BitrixClient:
         """
         try:
             method = f'crm.{entity_type}.update'
-            result = await self.client.call(method, [{'ID': entity_id, 'fields': fields}])
+            result = await self._call(method, [{'ID': entity_id, 'fields': fields}])
             logger.info(f"Обновлена сущность {entity_type} с ID {entity_id}")
             return result
         except Exception as e:
@@ -195,7 +238,7 @@ class BitrixClient:
             Список статусов
         """
         try:
-            statuses = await self.client.get_all(
+            statuses = await self._get_all(
                 'crm.status.list',
                 params={'filter': {'ENTITY_ID': entity_id}}
             )
@@ -217,7 +260,7 @@ class BitrixClient:
         """
         try:
             # Используем get_all для автоматической обработки batch запросов
-            categories = await self.client.get_all('crm.category.list', params={'entityTypeId': entity_type_id})
+            categories = await self._get_all('crm.category.list', params={'entityTypeId': entity_type_id})
             logger.info(f"Получено {len(categories)} категорий для entityTypeId {entity_type_id}")
             return categories
         except Exception as e:
@@ -243,7 +286,7 @@ class BitrixClient:
                 # Для остальных категорий используем формат DEAL_STAGE_{category_id}
                 entity_id = f'DEAL_STAGE_{category_id}'
             
-            stages = await self.client.get_all(
+            stages = await self._get_all(
                 'crm.status.list',
                 params={'filter': {'ENTITY_ID': entity_id}}
             )
@@ -264,7 +307,7 @@ class BitrixClient:
             Список ID контактов
         """
         try:
-            result = await self.client.call('crm.deal.contact.items.get', {'id': deal_id})
+            result = await self._call('crm.deal.contact.items.get', {'id': deal_id})
             contact_ids = []
             
             # Библиотека fast_bitrix24 уже обрабатывает batch формат и может вернуть:
@@ -396,7 +439,7 @@ class BitrixClient:
         try:
             # Получаем все сделки одним запросом с фильтром по ID
             # Используем get_all с фильтром IN для получения всех сделок сразу
-            deals = await self.client.get_all(
+            deals = await self._get_all(
                 'crm.deal.list',
                 params={
                     'select': ['ID', 'COMPANY_ID'],
@@ -444,7 +487,7 @@ class BitrixClient:
         
         try:
             # Получаем все сущности одним запросом с фильтром по ID
-            entities = await self.client.get_all(
+            entities = await self._get_all(
                 f'crm.{entity_type}.list',
                 params={
                     'select': select,
